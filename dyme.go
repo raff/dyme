@@ -77,7 +77,9 @@ func (m MetricsResult) ByInterval(mm int) []int {
 }
 
 // NewMetrics creates a new Metrics object. It creates the DynamoDB table if it doesn't exist (and create=true)
-func NewMetrics(db *dynago.DBClient, table string, create bool) (*Metrics, error) {
+func NewMetrics(table string, create bool) (*Metrics, error) {
+	db := dynago.NewDBClient()
+        
 	t, err := db.GetTable(table)
 	if err == dynago.ERR_NOT_FOUND && create {
 		t, err = db.CreateTableInstance(

@@ -3,10 +3,10 @@ package main
 import (
 	"flag"
 	"log"
-        "strings"
+	"os"
+	"strings"
 
-	"github.com/raff/dynago"
-        "github.com/raff/dyme"
+	"github.com/raff/dyme"
 )
 
 func main() {
@@ -17,7 +17,7 @@ func main() {
 	from := flag.String("from", "", "search from this date")
 	to := flag.String("to", "", "search to this date")
 	n := flag.Int("n", 0, "return metrics per `n` minutes")
-        creds := flag.String("creds", "", "DynamoDB credentials (key:secret)")
+	creds := flag.String("creds", "", "DynamoDB credentials (key:secret)")
 
 	flag.Parse()
 
@@ -25,15 +25,13 @@ func main() {
 		log.Fatal("missing stat name")
 	}
 
-        ks := strings.Split(*creds, ":")
-        if len(ks) != 2 {
-            log.Fatal("set creds as {key}:{secret}")
-        }
+	ks := strings.Split(*creds, ":")
+	if len(ks) == 2 {
+		os.Setenv("AWS_ACCESS_KEY", ks[0])
+		os.Setenv("AWS_SECRET_KEY", ks[1])
+	}
 
-	db := dynago.NewDBClient()
-	db.SetCredentials(ks[0], ks[1])
-
-	m, err := dyme.NewMetrics(db, *table, true)
+	m, err := dyme.NewMetrics(*table, true)
 	if err != nil {
 		log.Fatal("cannot create Metrics: ", err)
 	}
@@ -43,8 +41,8 @@ func main() {
 		if err != nil {
 			log.Fatal("cannot increment Metrics: ", err)
 		}
-                
-                log.Println(curr)
+
+		log.Println(curr)
 		return
 	}
 
