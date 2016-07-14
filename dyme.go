@@ -106,18 +106,22 @@ func NewMetrics(table string, create bool) (*Metrics, error) {
 
 // Incr increments the specified "stat" at the current slot (equivalent to IncrTime(stat, Now)
 func (m *Metrics) Incr(stat string) (int, error) {
-	return m.IncrTime(stat, Now)
+	return m.IncrTime(stat, 1, Now)
 }
 
+// IncrN increments the specified "stat" at the current slot by the specified amount n
+func (m *Metrics) IncrN(stat string, n int) (int, error) {
+	return m.IncrTime(stat, n, Now)
+}
 // IncrTime increments the specified "stat" for the time.
 // Pass a zero time.Time value (or Now) to increment the current slot
-func (m *Metrics) IncrTime(stat string, t time.Time) (int, error) {
+func (m *Metrics) IncrTime(stat string, n int, t time.Time) (int, error) {
 	date, offs := keyParts(t)
 
 	item, _, err := m.table.UpdateItem(stat, date,
 		"ADD #min :incr",
 		dynago.ExpressionAttributeNames(map[string]string{"#min": offs}),
-		dynago.ExpressionAttributeValues(map[string]interface{}{":incr": 1}),
+		dynago.ExpressionAttributeValues(map[string]interface{}{":incr": n}),
 		dynago.ReturnValues(dynago.RETURN_UPDATED_NEW))
 
         if err != nil {
