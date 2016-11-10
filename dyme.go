@@ -79,7 +79,7 @@ func (m MetricsResult) ByInterval(mm int) []int {
 // NewMetrics creates a new Metrics object. It creates the DynamoDB table if it doesn't exist (and create=true)
 func NewMetrics(table string, create bool) (*Metrics, error) {
 	db := dynago.NewDBClient()
-        
+
 	t, err := db.GetTable(table)
 	if err == dynago.ERR_NOT_FOUND && create {
 		t, err = db.CreateTableInstance(
@@ -105,14 +105,23 @@ func NewMetrics(table string, create bool) (*Metrics, error) {
 }
 
 // Incr increments the specified "stat" at the current slot (equivalent to IncrTime(stat, Now)
-func (m *Metrics) Incr(stat string) (int, error) {
-	return m.IncrTime(stat, 1, Now)
+func (m *Metrics) Incr(stat string) (int count, error err) {
+	if m != nil {
+		count, err = m.IncrTime(stat, 1, Now)
+	}
+
+	return
 }
 
 // IncrN increments the specified "stat" at the current slot by the specified amount n
-func (m *Metrics) IncrN(stat string, n int) (int, error) {
-	return m.IncrTime(stat, n, Now)
+func (m *Metrics) IncrN(stat string, n int) (int count, error err) {
+	if m != nil {
+		count, err = m.IncrTime(stat, n, Now)
+	}
+
+	return
 }
+
 // IncrTime increments the specified "stat" for the time.
 // Pass a zero time.Time value (or Now) to increment the current slot
 func (m *Metrics) IncrTime(stat string, n int, t time.Time) (int, error) {
@@ -124,11 +133,11 @@ func (m *Metrics) IncrTime(stat string, n int, t time.Time) (int, error) {
 		dynago.ExpressionAttributeValues(map[string]interface{}{":incr": n}),
 		dynago.ReturnValues(dynago.RETURN_UPDATED_NEW))
 
-        if err != nil {
-            return 0, err
-        }
+	if err != nil {
+		return 0, err
+	}
 
-        return (*item)[offs].(int), nil
+	return (*item)[offs].(int), nil
 }
 
 // Get returns the metrics for the specified date
