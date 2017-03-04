@@ -105,7 +105,7 @@ func NewMetrics(table string, create bool) (*Metrics, error) {
 }
 
 // Incr increments the specified "stat" at the current slot (equivalent to IncrTime(stat, Now)
-func (m *Metrics) Incr(stat string) (int count, error err) {
+func (m *Metrics) Incr(stat string) (count int, err error) {
 	if m != nil {
 		count, err = m.IncrTime(stat, 1, Now)
 	}
@@ -114,7 +114,7 @@ func (m *Metrics) Incr(stat string) (int count, error err) {
 }
 
 // IncrN increments the specified "stat" at the current slot by the specified amount n
-func (m *Metrics) IncrN(stat string, n int) (int count, error err) {
+func (m *Metrics) IncrN(stat string, n int) (count int, err error) {
 	if m != nil {
 		count, err = m.IncrTime(stat, n, Now)
 	}
