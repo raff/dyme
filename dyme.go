@@ -5,7 +5,11 @@ import (
 	"strings"
 	"time"
 
-	"github.com/raff/dynago"
+	"github.com/aws/aws-sdk-go/aws"
+	"github.com/aws/aws-sdk-go/aws/awserr"
+	"github.com/aws/aws-sdk-go/aws/session"
+	"github.com/aws/aws-sdk-go/service/dynamodb"
+	"github.com/aws/aws-sdk-go/service/dynamodb/expression"
 )
 
 const (
@@ -32,13 +36,27 @@ func keyParts(t time.Time) (string, string) {
 	return tdate, strconv.Itoa(ttime)
 }
 
-func metrics(m map[string]interface{}) *MetricsResult {
-	res := MetricsResult{Date: m[key_date].(string)}
+func Nint(s *string) int {
+	n, _ := strconv.Atoi(*s)
+	return n
+}
+
+func intN(n int) *string {
+	return aws.String(strconv.Itoa(n))
+}
+
+func metrics(m map[string]*dynamodb.AttributeValue) *MetricsResult {
+	if _, ok := m[key_date]; !ok {
+		return nil
+	}
+
+	date := m[key_date].S
+	res := MetricsResult{Date: *date}
 
 	for k, v := range m {
-		if vv, ok := v.(int); ok && !strings.HasPrefix(k, key_prefix) {
+		if !strings.HasPrefix(k, key_prefix) && v != nil {
 			kk, _ := strconv.Atoi(k)
-			res.Values[kk] = vv
+			res.Values[kk] = Nint(v.N)
 		}
 	}
 
@@ -47,18 +65,18 @@ func metrics(m map[string]interface{}) *MetricsResult {
 
 // Metrics is the main object that deals with storing/retriving metrics in DynamoDb
 type Metrics struct {
-	db    *dynago.DBClient
-	table *dynago.TableInstance
+	db    *dynamodb.DynamoDB
+	table string
 }
 
 // MetricsResult is returned by Metrics.Get and GetBatch calls
 // it returns the date for the stored metrics and a list of values (1440 entries, one per minute in the selected day)
 type MetricsResult struct {
-	Date   string
-	Values [MINUTES_PER_DAY]int
+	Date   string               `json:"date"`
+	Values [MINUTES_PER_DAY]int `json:"metrics"`
 }
 
-// ByInterval returns a list of total metric for the selected interval in minues
+// ByInterval returns a list of total metrics for the selected interval in minues
 // (i.e. ByInterval(60) will return 24 entries, with the total metrics per hour
 func (m MetricsResult) ByInterval(mm int) []int {
 	if mm <= 1 {
@@ -76,32 +94,85 @@ func (m MetricsResult) ByInterval(mm int) []int {
 	return ret
 }
 
-// NewMetrics creates a new Metrics object. It creates the DynamoDB table if it doesn't exist (and create=true)
-func NewMetrics(table string, create bool) (*Metrics, error) {
-	db := dynago.NewDBClient()
+type config struct {
+	region   string
+	create   bool
+	readCap  int64
+	writeCap int64
+}
 
-	t, err := db.GetTable(table)
-	if err == dynago.ERR_NOT_FOUND && create {
-		t, err = db.CreateTableInstance(
-			table,
-			[]dynago.AttributeDefinition{
-				dynago.AttributeDefinition{key_id, dynago.STRING_ATTRIBUTE},
-				dynago.AttributeDefinition{key_date, dynago.STRING_ATTRIBUTE},
-			},
-			[]string{
-				key_id,
-				key_date,
-			},
-			5,
-			5,
-			"")
+type MetricsOption func(c *config)
+
+func Region(r string) MetricsOption {
+	return func(c *config) {
+		c.region = r
+	}
+}
+
+func Create() MetricsOption {
+	return func(c *config) {
+		c.create = true
+	}
+}
+
+func Capacity(rc, wc int64) MetricsOption {
+	return func(c *config) {
+		c.readCap = rc
+		c.writeCap = wc
+	}
+}
+
+// NewMetrics creates a new Metrics object. It creates the DynamoDB table if it doesn't exist (and create=true)
+func NewMetrics(table string, options ...MetricsOption) (*Metrics, error) {
+	mconf := config{
+		region:   "us-east-1",
+		create:   false,
+		readCap:  5,
+		writeCap: 5,
 	}
 
+	for _, setOption := range options {
+		setOption(&mconf)
+	}
+
+	sess, err := session.NewSession(&aws.Config{Region: aws.String(mconf.region)})
 	if err != nil {
 		return nil, err
 	}
 
-	return &Metrics{db: db, table: t}, nil
+	db := dynamodb.New(sess)
+
+	_, err = db.DescribeTable(&dynamodb.DescribeTableInput{TableName: aws.String(table)})
+	if err != nil {
+		if aerr, ok := err.(awserr.Error); ok &&
+			aerr.Code() == dynamodb.ErrCodeResourceNotFoundException && mconf.create {
+
+			_, err = db.CreateTable(&dynamodb.CreateTableInput{
+				TableName: aws.String(table),
+
+				AttributeDefinitions: []*dynamodb.AttributeDefinition{
+					{AttributeName: aws.String(key_id), AttributeType: aws.String("S")},
+					{AttributeName: aws.String(key_date), AttributeType: aws.String("S")},
+				},
+
+				KeySchema: []*dynamodb.KeySchemaElement{
+					{AttributeName: aws.String(key_id), KeyType: aws.String("HASH")},
+					{AttributeName: aws.String(key_date), KeyType: aws.String("RANGE")},
+				},
+
+				ProvisionedThroughput: &dynamodb.ProvisionedThroughput{
+					ReadCapacityUnits:  aws.Int64(mconf.readCap),
+					WriteCapacityUnits: aws.Int64(mconf.writeCap),
+				}})
+
+		}
+
+		if err != nil {
+			return nil, err
+		}
+	}
+
+	return &Metrics{db: db, table: table}, nil
 }
 
 // Incr increments the specified "stat" at the current slot (equivalent to IncrTime(stat, Now)
@@ -127,88 +198,81 @@ func (m *Metrics) IncrN(stat string, n int) (count int, err error) {
 func (m *Metrics) IncrTime(stat string, n int, t time.Time) (int, error) {
 	date, offs := keyParts(t)
 
-	item, _, err := m.table.UpdateItem(stat, date,
-		"ADD #min :incr",
-		dynago.ExpressionAttributeNames(map[string]string{"#min": offs}),
-		dynago.ExpressionAttributeValues(map[string]interface{}{":incr": n}),
-		dynago.ReturnValues(dynago.RETURN_UPDATED_NEW))
+	res, err := m.db.UpdateItem(&dynamodb.UpdateItemInput{
+		TableName: aws.String(m.table),
+
+		Key: map[string]*dynamodb.AttributeValue{
+			key_id:   {S: aws.String(stat)},
+			key_date: {S: aws.String(date)},
+		},
+
+		UpdateExpression:          aws.String("ADD #min :incr"),
+		ExpressionAttributeNames:  map[string]*string{"#min": aws.String(offs)},
+		ExpressionAttributeValues: map[string]*dynamodb.AttributeValue{":incr": {N: intN(n)}},
+
+		ReturnValues: aws.String("UPDATED_NEW"),
+	})
 
 	if err != nil {
 		return 0, err
 	}
 
-	return (*item)[offs].(int), nil
+	return Nint(res.Attributes[offs].N), nil
 }
 
 // Get returns the metrics for the specified date
 func (m *Metrics) Get(stat, date string) (*MetricsResult, error) {
-	c := "#hash = :hash AND #range = :date"
-	names := map[string]string{
-		"#hash":  m.table.HashKey().AttributeName,
-		"#range": m.table.RangeKey().AttributeName,
-	}
+	res, err := m.db.GetItem(&dynamodb.GetItemInput{
+		TableName: aws.String(m.table),
+		Key: map[string]*dynamodb.AttributeValue{
+			key_id:   {S: aws.String(stat)},
+			key_date: {S: aws.String(date)},
+		},
+	})
 
-	values := map[string]interface{}{
-		":hash": stat,
-		":date": date,
-	}
-
-	q := m.table.Query(nil)
-	q.SetConditionExpression(c)
-	q.SetAttributeNames(names)
-	q.SetAttributeValues(values)
-
-	items, _, _, err := q.Exec(nil)
 	if err != nil {
 		return nil, err
 	}
 
-	return metrics(items[0]), nil
+	return metrics(res.Item), nil
 }
 
 // Get returns the metrics for the specified date range.
 // You can pass from="" to start at the oldest date, and to="" to end at the newest date
 func (m *Metrics) GetRange(stat, from, to string) ([]*MetricsResult, error) {
-	c := "#hash = :hash"
-	names := map[string]string{
-		"#hash":  m.table.HashKey().AttributeName,
-		"#range": m.table.RangeKey().AttributeName,
-	}
 
-	values := map[string]interface{}{
-		":hash": stat,
-	}
-
+	cond := expression.Key(key_id).Equal(expression.Value(stat))
 	if from == "" && to == "" {
-		c += " AND #range >= :from"
-		values[":from"] = " "
+		cond = expression.KeyAnd(cond, expression.Key(key_date).GreaterThanEqual(expression.Value(" ")))
 	} else if from != "" && to != "" {
-		c += " AND #range BETWEEN :from AND :to"
-		values[":from"] = from
-		values[":to"] = to
+		cond = expression.KeyAnd(cond, expression.Key(key_date).Between(expression.Value(from),
+			expression.Value(to)))
 	} else if from != "" {
-		c += " AND #range >= :from"
-		values[":from"] = from
+		cond = expression.KeyAnd(cond, expression.Key(key_date).GreaterThanEqual(expression.Value(from)))
 	} else {
-		c += " AND #range <= :to"
-		values[":to"] = to
+		cond = expression.KeyAnd(cond, expression.Key(key_date).LessThanEqual(expression.Value(from)))
 	}
 
-	q := m.table.Query(nil)
-	q.SetConditionExpression(c)
-	q.SetAttributeNames(names)
-	q.SetAttributeValues(values)
-
-	items, _, _, err := q.Exec(nil)
+	expr, err := expression.NewBuilder().WithKeyCondition(cond).Build()
 	if err != nil {
 		return nil, err
 	}
 
-	res := make([]*MetricsResult, len(items))
-
-	for k, i := range items {
-		res[k] = metrics(i)
+	res, err := m.db.Query(&dynamodb.QueryInput{
+		TableName:                 aws.String(m.table),
+		KeyConditionExpression:    expr.KeyCondition(),
+		ExpressionAttributeNames:  expr.Names(),
+		ExpressionAttributeValues: expr.Values(),
+	})
+	if err != nil {
+		return nil, err
 	}
 
-	return res, nil
+	mres := make([]*MetricsResult, len(res.Items))
+
+	for k, i := range res.Items {
+		mres[k] = metrics(i)
+	}
+
+	return mres, nil
 }
