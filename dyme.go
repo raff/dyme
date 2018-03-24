@@ -25,6 +25,14 @@ var (
 	Now time.Time
 )
 
+func DateKey(t time.Time) string {
+	if t.IsZero() {
+		t = time.Now()
+	}
+
+	return t.Format(dateFormat)
+}
+
 func keyParts(t time.Time) (string, string) {
 	if t.IsZero() {
 		t = time.Now()

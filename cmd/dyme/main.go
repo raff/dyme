@@ -1,30 +1,36 @@
 package main
 
 import (
-	//"encoding/json"
 	"flag"
 	"fmt"
 	"log"
+        "strings"
+        "strconv"
 	"time"
 
 	"github.com/raff/dyme"
 )
 
-func printMetrics(m *dyme.MetricsResult, interval int, asJson bool) {
-	values, max := m.ByInterval(interval)
-	fmt.Println(m.Date, max, values)
+func printMetrics(m *dyme.MetricsResult, interval int, date bool) {
+    values, _ := m.ByInterval(interval)
+    svalues := strings.Replace(fmt.Sprint(values), " ", ",", -1)
+
+    if date {
+        fmt.Printf("{%q: %v}\n", m.Date, svalues)
+    } else {
+	fmt.Println(svalues)
+    }
 }
 
 func main() {
 	table := flag.String("table", "stats", "table name")
 	stat := flag.String("stat", "", "stat name")
 	query := flag.Bool("q", false, "if true, query database. If false, increment stat")
-	date := flag.String("date", "", "fetch this date only")
+	date := flag.String("date", "", "fetch this date only (YYYYMMDD)")
 	from := flag.String("from", "", "search from this date")
 	to := flag.String("to", "", "search to this date")
 	period := flag.Duration("period", 0, "return metrics in units of duration (1 minute minimum)")
 	n := flag.Int("n", 1, "increment stat by this value")
-	j := flag.Bool("json", false, "json output")
 
 	flag.Parse()
 
@@ -50,6 +56,16 @@ func main() {
 	interval := int(*period / time.Minute)
 
 	if *date != "" {
+                d, err := strconv.Atoi(*date)
+                if err != nil {
+                    log.Fatal("invalid date")
+                }
+
+                if d < 500 {
+                    // days before today
+                    *date = dyme.DateKey(time.Now().AddDate(0, 0, -d))
+                }
+
 		r, err := m.Get(*stat, *date)
 		if err != nil {
 			log.Fatal("cannot get Metrics: ", err)
@@ -57,7 +73,7 @@ func main() {
 		if r == nil {
 			log.Println("no Metrics for", *date)
 		} else {
-			printMetrics(r, interval, *j)
+			printMetrics(r, interval, false)
 		}
 	} else {
 		rr, err := m.GetRange(*stat, *from, *to)
@@ -65,7 +81,7 @@ func main() {
 			log.Fatal("cannot get Metrics: ", err)
 		}
 		for _, r := range rr {
-			printMetrics(r, interval, *j)
+			printMetrics(r, interval, true)
 		}
 	}
 }
