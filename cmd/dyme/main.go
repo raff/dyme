@@ -1,16 +1,19 @@
 package main
 
 import (
+	//"encoding/json"
 	"flag"
 	"fmt"
 	"log"
-	"os"
-	"strings"
-	//"encoding/json"
 	"time"
 
 	"github.com/raff/dyme"
 )
+
+func printMetrics(m *dyme.MetricsResult, interval int, asJson bool) {
+	values, max := m.ByInterval(interval)
+	fmt.Println(m.Date, max, values)
+}
 
 func main() {
 	table := flag.String("table", "stats", "table name")
@@ -21,18 +24,12 @@ func main() {
 	to := flag.String("to", "", "search to this date")
 	period := flag.Duration("period", 0, "return metrics in units of duration (1 minute minimum)")
 	n := flag.Int("n", 1, "increment stat by this value")
-	creds := flag.String("creds", "", "DynamoDB credentials (key:secret)")
+	j := flag.Bool("json", false, "json output")
 
 	flag.Parse()
 
 	if *stat == "" {
 		log.Fatal("missing stat name")
-	}
-
-	ks := strings.Split(*creds, ":")
-	if len(ks) == 2 {
-		os.Setenv("AWS_ACCESS_KEY", ks[0])
-		os.Setenv("AWS_SECRET_KEY", ks[1])
 	}
 
 	m, err := dyme.NewMetrics(*table, dyme.Create())
@@ -60,7 +57,7 @@ func main() {
 		if r == nil {
 			log.Println("no Metrics for", *date)
 		} else {
-			fmt.Println(r.Date, r.ByInterval(interval))
+			printMetrics(r, interval, *j)
 		}
 	} else {
 		rr, err := m.GetRange(*stat, *from, *to)
@@ -68,7 +65,7 @@ func main() {
 			log.Fatal("cannot get Metrics: ", err)
 		}
 		for _, r := range rr {
-			fmt.Println(r.Date, r.ByInterval(interval))
+			printMetrics(r, interval, *j)
 		}
 	}
 }

@@ -72,26 +72,37 @@ type Metrics struct {
 // MetricsResult is returned by Metrics.Get and GetBatch calls
 // it returns the date for the stored metrics and a list of values (1440 entries, one per minute in the selected day)
 type MetricsResult struct {
-	Date   string               `json:"date"`
-	Values [MINUTES_PER_DAY]int `json:"metrics"`
+	Date   string
+	Values [MINUTES_PER_DAY]int
 }
 
 // ByInterval returns a list of total metrics for the selected interval in minues
 // (i.e. ByInterval(60) will return 24 entries, with the total metrics per hour
-func (m MetricsResult) ByInterval(mm int) []int {
+func (m MetricsResult) ByInterval(mm int) (values []int, max int) {
 	if mm <= 1 {
-		return m.Values[:]
+		for _, v := range m.Values {
+			if v > max {
+				max = v
+			}
+		}
+
+		values = m.Values[:]
+		return
 	}
 
 	sz := (len(m.Values) + mm - 1) / mm
-	ret := make([]int, sz)
+	values = make([]int, sz)
 
 	for i, v := range m.Values {
 		j := i / mm
-		ret[j] += v
+		values[j] += v
+
+		if values[j] > max {
+			max = values[j]
+		}
 	}
 
-	return ret
+	return
 }
 
 type config struct {
