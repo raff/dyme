@@ -113,6 +113,22 @@ func (m MetricsResult) ByInterval(mm int) (values []int, max int) {
 	return
 }
 
+type MMetricsResult []*MetricsResult
+
+// ByInterval returns a list of total metrics for the selected interval in minues
+// (i.e. ByInterval(60) will return 24 entries, with the total metrics per hour
+func (l MMetricsResult) ByInterval(mm int) (values []int, max int) {
+	for _, m := range l {
+		v, m := m.ByInterval(mm)
+		values = append(values, v...)
+		if m > max {
+			max = m
+		}
+	}
+
+	return
+}
+
 type config struct {
 	region   string
 	create   bool
@@ -258,7 +274,7 @@ func (m *Metrics) Get(stat, date string) (*MetricsResult, error) {
 
 // Get returns the metrics for the specified date range.
 // You can pass from="" to start at the oldest date, and to="" to end at the newest date
-func (m *Metrics) GetRange(stat, from, to string) ([]*MetricsResult, error) {
+func (m *Metrics) GetRange(stat, from, to string) (MMetricsResult, error) {
 
 	cond := expression.Key(key_id).Equal(expression.Value(stat))
 	if from == "" && to == "" {

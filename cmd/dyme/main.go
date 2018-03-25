@@ -4,28 +4,45 @@ import (
 	"flag"
 	"fmt"
 	"log"
-        "strings"
-        "strconv"
+	"strconv"
+	"strings"
 	"time"
 
 	"github.com/raff/dyme"
 )
 
-func printMetrics(m *dyme.MetricsResult, interval int, date bool) {
-    values, _ := m.ByInterval(interval)
-    svalues := strings.Replace(fmt.Sprint(values), " ", ",", -1)
+func printMetrics(mm dyme.MMetricsResult, interval int, date bool) {
+	values, _ := mm.ByInterval(interval)
+	svalues := strings.Replace(fmt.Sprint(values), " ", ",", -1)
 
-    if date {
-        fmt.Printf("{%q: %v}\n", m.Date, svalues)
-    } else {
-	fmt.Println(svalues)
-    }
+	if date {
+		fmt.Printf("{%q: %v}\n", mm[0].Date, svalues)
+	} else {
+		fmt.Println(svalues)
+	}
+}
+
+func parseDate(date string) string {
+	if date != "" {
+		d, err := strconv.Atoi(date)
+		if err != nil {
+			log.Fatal("invalid date")
+		}
+
+		if d < 500 {
+			// days before today
+			date = dyme.DateKey(time.Now().AddDate(0, 0, -d))
+		}
+	}
+
+	return date
 }
 
 func main() {
 	table := flag.String("table", "stats", "table name")
 	stat := flag.String("stat", "", "stat name")
 	query := flag.Bool("q", false, "if true, query database. If false, increment stat")
+	compact := flag.Bool("compact", false, "if true, don't print date in range")
 	date := flag.String("date", "", "fetch this date only (YYYYMMDD)")
 	from := flag.String("from", "", "search from this date")
 	to := flag.String("to", "", "search to this date")
@@ -55,16 +72,11 @@ func main() {
 
 	interval := int(*period / time.Minute)
 
-	if *date != "" {
-                d, err := strconv.Atoi(*date)
-                if err != nil {
-                    log.Fatal("invalid date")
-                }
+	*date = parseDate(*date)
+	*from = parseDate(*from)
+	*to = parseDate(*to)
 
-                if d < 500 {
-                    // days before today
-                    *date = dyme.DateKey(time.Now().AddDate(0, 0, -d))
-                }
+	if *date != "" {
 
 		r, err := m.Get(*stat, *date)
 		if err != nil {
@@ -73,15 +85,14 @@ func main() {
 		if r == nil {
 			log.Println("no Metrics for", *date)
 		} else {
-			printMetrics(r, interval, false)
+			printMetrics(dyme.MMetricsResult{r}, interval, false)
 		}
 	} else {
 		rr, err := m.GetRange(*stat, *from, *to)
 		if err != nil {
 			log.Fatal("cannot get Metrics: ", err)
 		}
-		for _, r := range rr {
-			printMetrics(r, interval, true)
-		}
+
+		printMetrics(rr, interval, !*compact)
 	}
 }
