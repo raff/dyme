@@ -11,8 +11,22 @@ import (
 	"github.com/raff/dyme"
 )
 
-func printMetrics(mm dyme.MMetricsResult, interval int, date bool) {
+func printMetrics(mm dyme.MMetricsResult, interval, period int, date bool, nz bool) {
 	values, _ := mm.ByInterval(interval)
+	if period > 0 && period < len(values) {
+		start := len(values) - period
+		values = values[start:]
+	}
+
+        if nz {
+            for i := len(values)-1; i >= 0; i-- {
+                if values[i] != 0 {
+                    values = values[:i+1]
+                    break
+                }
+            }
+        }
+
 	svalues := strings.Replace(fmt.Sprint(values), " ", ",", -1)
 
 	if date {
@@ -46,8 +60,10 @@ func main() {
 	date := flag.String("date", "", "fetch this date only (YYYYMMDD)")
 	from := flag.String("from", "", "search from this date")
 	to := flag.String("to", "", "search to this date")
-	period := flag.Duration("period", 0, "return metrics in units of duration (1 minute minimum)")
+	interval := flag.Duration("interval", 0, "return metrics in units of duration (1 minute minimum)")
+	period := flag.Int("period", 0, "return period (number of values)")
 	n := flag.Int("n", 1, "increment stat by this value")
+        nz := flag.Bool("z", false, "remove trailing zeroes")
 
 	flag.Parse()
 
@@ -70,7 +86,7 @@ func main() {
 		return
 	}
 
-	interval := int(*period / time.Minute)
+	iinterval := int(*interval / time.Minute)
 
 	*date = parseDate(*date)
 	*from = parseDate(*from)
@@ -85,7 +101,7 @@ func main() {
 		if r == nil {
 			log.Println("no Metrics for", *date)
 		} else {
-			printMetrics(dyme.MMetricsResult{r}, interval, false)
+			printMetrics(dyme.MMetricsResult{r}, iinterval, *period, false, *nz)
 		}
 	} else {
 		rr, err := m.GetRange(*stat, *from, *to)
@@ -93,6 +109,6 @@ func main() {
 			log.Fatal("cannot get Metrics: ", err)
 		}
 
-		printMetrics(rr, interval, !*compact)
+		printMetrics(rr, iinterval, *period, !*compact, *nz)
 	}
 }
