@@ -18,14 +18,14 @@ func printMetrics(mm dyme.MMetricsResult, interval, period int, date bool, nz bo
 		values = values[start:]
 	}
 
-        if nz {
-            for i := len(values)-1; i >= 0; i-- {
-                if values[i] != 0 {
-                    values = values[:i+1]
-                    break
-                }
-            }
-        }
+	if nz {
+		for i := len(values) - 1; i >= 0; i-- {
+			if values[i] != 0 {
+				values = values[:i+1]
+				break
+			}
+		}
+	}
 
 	svalues := strings.Replace(fmt.Sprint(values), " ", ",", -1)
 
@@ -54,6 +54,7 @@ func parseDate(date string) string {
 
 func main() {
 	table := flag.String("table", "stats", "table name")
+	profile := flag.String("profile", "", "aws profile")
 	stat := flag.String("stat", "", "stat name")
 	query := flag.Bool("q", false, "if true, query database. If false, increment stat")
 	compact := flag.Bool("compact", false, "if true, don't print date in range")
@@ -63,7 +64,7 @@ func main() {
 	interval := flag.Duration("interval", 0, "return metrics in units of duration (1 minute minimum)")
 	period := flag.Int("period", 0, "return period (number of values)")
 	n := flag.Int("n", 1, "increment stat by this value")
-        nz := flag.Bool("z", false, "remove trailing zeroes")
+	nz := flag.Bool("z", false, "remove trailing zeroes")
 
 	flag.Parse()
 
@@ -71,7 +72,7 @@ func main() {
 		log.Fatal("missing stat name")
 	}
 
-	m, err := dyme.NewMetrics(*table, dyme.Create())
+	m, err := dyme.NewMetrics(*table, dyme.Create(), dyme.Profile(*profile))
 	if err != nil {
 		log.Fatal("cannot create Metrics: ", err)
 	}
@@ -93,7 +94,6 @@ func main() {
 	*to = parseDate(*to)
 
 	if *date != "" {
-
 		r, err := m.Get(*stat, *date)
 		if err != nil {
 			log.Fatal("cannot get Metrics: ", err)

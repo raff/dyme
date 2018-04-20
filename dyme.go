@@ -131,6 +131,7 @@ func (l MMetricsResult) ByInterval(mm int) (values []int, max int) {
 
 type config struct {
 	region   string
+	profile  string
 	create   bool
 	readCap  int64
 	writeCap int64
@@ -141,6 +142,12 @@ type MetricsOption func(c *config)
 func Region(r string) MetricsOption {
 	return func(c *config) {
 		c.region = r
+	}
+}
+
+func Profile(p string) MetricsOption {
+	return func(c *config) {
+		c.profile = p
 	}
 }
 
@@ -161,6 +168,7 @@ func Capacity(rc, wc int64) MetricsOption {
 func NewMetrics(table string, options ...MetricsOption) (*Metrics, error) {
 	mconf := config{
 		region:   "us-east-1",
+		profile:  "",
 		create:   false,
 		readCap:  5,
 		writeCap: 5,
@@ -170,7 +178,10 @@ func NewMetrics(table string, options ...MetricsOption) (*Metrics, error) {
 		setOption(&mconf)
 	}
 
-	sess, err := session.NewSession(&aws.Config{Region: aws.String(mconf.region)})
+	sess, err := session.NewSessionWithOptions(session.Options{
+		Profile: mconf.profile,
+		Config:  aws.Config{Region: aws.String(mconf.region)},
+	})
 	if err != nil {
 		return nil, err
 	}
