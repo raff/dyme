@@ -35,24 +35,32 @@ func printMetrics(mm dyme.MMetricsResult, interval, period int, format Format, n
 		}
 	}
 
-	svalues := strings.Replace(fmt.Sprint(values), " ", ",", -1)
-
 	switch format {
 	case Compact:
+		svalues := strings.Replace(fmt.Sprint(values), " ", ",", -1)
 		fmt.Println(svalues)
 
 	case Start:
-		if len(mm) == 0 {
-			fmt.Println("{}")
-		} else {
-			fmt.Printf("{%q: %v}\n", mm[0].Date, svalues)
-		}
+		svalues := strings.Replace(fmt.Sprint(values), " ", ",", -1)
+		fmt.Printf("{%q: %v}\n", mm[0].Date, svalues)
 
 	case Labels:
 		// not really implemented yet
-		if len(mm) == 0 {
-			fmt.Println("{}")
+		if interval%(24*60) == 0 {
+			// interval is in days, return date
+			start, _ := time.Parse(dyme.DateFormat, mm[0].Date)
+			fmt.Print("[")
+			for _, v := range values {
+				fmt.Printf("{%q: %v},", start.Format(dyme.DateFormat), v)
+				start = start.Add(24 * time.Hour)
+			}
+			fmt.Println("]")
 		} else {
+			// assume it's hours or less, return time
+			start := time.Date(0, 0, 0, 0, interval, 0, 0, time.UTC)
+			_ = start
+
+			svalues := strings.Replace(fmt.Sprint(values), " ", ",", -1)
 			fmt.Printf("{%q: %v}\n", mm[0].Date, svalues)
 		}
 	}
@@ -81,8 +89,8 @@ func main() {
 	op := flag.String("op", "get", "get or incr/set")
 	sformat := flag.String("format", "", "output format: labels, compact, start")
 	date := flag.String("date", "", "fetch this date only (YYYYMMDD)")
-	from := flag.String("from", "", "search from this date")
-	to := flag.String("to", "", "search to this date")
+	from := flag.String("from", "", "search from this date (YYYYMMDD)")
+	to := flag.String("to", "", "search to this date (YYYYMMDD)")
 	interval := flag.Duration("interval", 0, "return metrics in units of duration (1 minute minimum)")
 	period := flag.Int("period", 0, "return period (number of values)")
 	n := flag.Int("n", 1, "increment stat by this value")
@@ -134,7 +142,7 @@ func main() {
 			log.Fatal("cannot get Metrics: ", err)
 		}
 		if r == nil {
-			log.Println("no Metrics for", *date)
+			log.Printf("no Metrics for %q, date %q", *stat, *date)
 		} else {
 			printMetrics(dyme.MMetricsResult{r}, iinterval, *period, format, *nz)
 		}
@@ -144,6 +152,10 @@ func main() {
 			log.Fatal("cannot get Metrics: ", err)
 		}
 
-		printMetrics(rr, iinterval, *period, format, *nz)
+		if len(rr) == 0 {
+			log.Printf("no Metrics for %q, range %q to %q", *stat, *from, *to)
+		} else {
+			printMetrics(rr, iinterval, *period, format, *nz)
+		}
 	}
 }

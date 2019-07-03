@@ -18,7 +18,7 @@ const (
 	key_prefix = "_"
 	key_id     = "_id"
 	key_date   = "_date"
-	dateFormat = "20060102"
+	DateFormat = "20060102"
 )
 
 var (
@@ -30,7 +30,7 @@ func DateKey(t time.Time) string {
 		t = time.Now()
 	}
 
-	return t.Format(dateFormat)
+	return t.Format(DateFormat)
 }
 
 func keyParts(t time.Time) (string, string) {
@@ -38,7 +38,7 @@ func keyParts(t time.Time) (string, string) {
 		t = time.Now()
 	}
 
-	tdate := t.Format(dateFormat)
+	tdate := t.Format(DateFormat)
 	ttime := t.Hour()*60 + t.Minute()
 
 	return tdate, strconv.Itoa(ttime)
